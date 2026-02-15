@@ -199,13 +199,12 @@ try:
         # SHOW MESSAGE TO UPLOAD TEST DATA
         # ====================================================================
         st.markdown("---")
+        st.info("**Upload a CSV file in the sidebar to view evaluation metrics, confusion matrix, and predictions for Test Data**")
         
-        if uploaded_file is None:
-            st.info("📤 **Upload a CSV file in the sidebar to view evaluation metrics, confusion matrix, and predictions!**")
-        else:
-            # ====================================================================
-            # PROCESS UPLOADED DATA AND SHOW METRICS
-            # ====================================================================
+        # ====================================================================
+        # PROCESS UPLOADED DATA AND SHOW METRICS
+        # ====================================================================
+        if uploaded_file is not None:
             try:
                 # Read uploaded file
                 test_data = pd.read_csv(uploaded_file)
@@ -249,7 +248,7 @@ try:
                 # EVALUATION METRICS ON UPLOADED DATA
                 # ====================================================================
                 st.markdown("---")
-                st.header("Model Evaluation Metrics (Uploaded Data)")
+                st.header("Model Evaluation Metrics For Uploaded Data")
                 
                 if has_target:
                     # Calculate metrics
@@ -272,6 +271,34 @@ try:
                         st.metric("MCC Score", f"{metrics['MCC Score']:.4f}")
                 else:
                     st.warning("⚠️ Target column (loan_status) not found. Metrics cannot be calculated. Only predictions will be shown.")
+                
+                # ====================================================================
+                # PREDICTIONS DISPLAY
+                # ====================================================================
+                st.markdown("---")
+                st.header("Predictions")
+                
+                # Create results dataframe
+                results_df = test_data.copy()
+                results_df['Prediction'] = predictions
+                results_df['Prediction_Label'] = results_df['Prediction'].apply(
+                    lambda x: '✅ Approved' if x == 1 else '❌ Rejected'
+                )
+                
+                if prob_approved is not None:
+                    results_df['Approval_Probability'] = prob_approved
+                
+                st.subheader(f"Predictions using {model_name}:")
+                st.dataframe(results_df, use_container_width=True)
+                
+                # Download predictions
+                csv = results_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Predictions as CSV",
+                    data=csv,
+                    file_name=f"predictions_{model_name.replace(' ', '_')}.csv",
+                    mime="text/csv"
+                )
                 
                 # ====================================================================
                 # CONFUSION MATRIX AND CLASSIFICATION REPORT
@@ -316,34 +343,6 @@ try:
                         st.markdown("**Detailed Report:**")
                         st.text(classification_report(test_data_target, predictions))
                 
-                # ====================================================================
-                # PREDICTIONS DISPLAY
-                # ====================================================================
-                st.markdown("---")
-                st.header("Predictions")
-                
-                # Create results dataframe
-                results_df = test_data.copy()
-                results_df['Prediction'] = predictions
-                results_df['Prediction_Label'] = results_df['Prediction'].apply(
-                    lambda x: '✅ Approved' if x == 1 else '❌ Rejected'
-                )
-                
-                if prob_approved is not None:
-                    results_df['Approval_Probability'] = prob_approved
-                
-                st.subheader(f"Predictions using {model_name}:")
-                st.dataframe(results_df, use_container_width=True)
-                
-                # Download predictions
-                csv = results_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Predictions as CSV",
-                    data=csv,
-                    file_name=f"predictions_{model_name.replace(' ', '_')}.csv",
-                    mime="text/csv"
-                )
-                
                 # Display prediction statistics
                 st.markdown("---")
                 st.header("Prediction Statistics")
@@ -358,6 +357,69 @@ try:
             
             except Exception as e:
                 st.error(f"❌ Error processing uploaded file: {e}")
+        
+        # ====================================================================
+        # ALL MODELS COMPARISON - Evaluation Metrics & Overall Confusion Matrix
+        # ====================================================================
+        st.markdown("---")
+        st.header("All Models Comparison")
+        
+        # Calculate metrics for all models on built-in test set
+        all_models_metrics = {}
+        all_models_predictions = {}
+        
+        for model_key, model_obj in trained_models.items():
+            pred = model_obj.predict(X_test_processed)
+            all_models_predictions[model_key] = pred
+            all_models_metrics[model_key] = calculate_metrics(y_test, pred, model_obj)
+        
+        # Display metrics comparison table
+        st.subheader("Evaluation Metrics for All Models (Built-in Test Set)")
+        metrics_df = pd.DataFrame(all_models_metrics).T
+        metrics_df = metrics_df.round(4)
+        st.dataframe(metrics_df, use_container_width=True)
+        
+        # Calculate ensemble predictions (majority voting)
+        ensemble_predictions_array = np.array([all_models_predictions[key] for key in all_models_predictions.keys()])
+        ensemble_predictions = (ensemble_predictions_array.sum(axis=0) >= 3).astype(int)  # Majority vote (3+ out of 6)
+        
+        # Calculate ensemble metrics
+        ensemble_metrics = calculate_metrics(y_test, ensemble_predictions, trained_models[model_name])
+        
+        # Display overall confusion matrix
+        st.subheader("Overall Confusion Matrix (Ensemble Voting)")
+        
+        col_cm_left, col_cm_right = st.columns(2)
+        
+        with col_cm_left:
+            cm_ensemble = confusion_matrix(y_test, ensemble_predictions)
+            
+            fig, ax = plt.subplots(figsize=(7, 6))
+            sns.heatmap(cm_ensemble, annot=True, fmt='d', cmap='Blues', ax=ax, cbar_kws={'label': 'Count'})
+            ax.set_xlabel('Predicted')
+            ax.set_ylabel('Actual')
+            ax.set_title('Ensemble Voting (Majority Vote from All 6 Models)')
+            ax.set_xticklabels(['Rejected', 'Approved'])
+            ax.set_yticklabels(['Rejected', 'Approved'])
+            st.pyplot(fig)
+        
+        with col_cm_right:
+            st.markdown("**Ensemble Voting Metrics:**")
+            st.metric("Accuracy", f"{ensemble_metrics['Accuracy']:.4f}")
+            st.metric("AUC Score", f"{ensemble_metrics['AUC Score']:.4f}")
+            st.metric("Precision", f"{ensemble_metrics['Precision']:.4f}")
+            st.metric("Recall", f"{ensemble_metrics['Recall']:.4f}")
+            st.metric("F1 Score", f"{ensemble_metrics['F1 Score']:.4f}")
+            st.metric("MCC Score", f"{ensemble_metrics['MCC Score']:.4f}")
+            
+            tn, fp, fn, tp = cm_ensemble.ravel()
+            st.markdown(f"""
+            **Matrix Breakdown:**
+            - True Negatives (TN): {tn}
+            - False Positives (FP): {fp}
+            - False Negatives (FN): {fn}
+            - True Positives (TP): {tp}
+            """)
         
         # ====================================================================
         # FOOTER
