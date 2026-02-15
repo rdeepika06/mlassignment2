@@ -61,6 +61,13 @@ uploaded_file = st.sidebar.file_uploader(
 )
 
 st.sidebar.markdown("---")
+st.sidebar.subheader("📊 Sample Test Dataset")
+st.sidebar.markdown(
+    "Download the sample test data: [loan_data_test.csv](https://github.com/rdeepika06/mlassignment2/blob/main/model/loan_data_test.csv)"
+)
+st.sidebar.caption("Use this file to test model predictions and evaluate metrics.")
+
+st.sidebar.markdown("---")
 st.sidebar.info(
     "**Note:** This app uses the loan dataset with 13 features. "
     "Ensure your CSV matches the required format."
@@ -373,11 +380,28 @@ try:
             all_models_predictions[model_key] = pred
             all_models_metrics[model_key] = calculate_metrics(y_test, pred, model_obj)
         
-        # Display metrics comparison table
+        # Display metrics comparison table with bold headers and model names
         st.subheader("Evaluation Metrics for All Models (Built-in Test Set)")
         metrics_df = pd.DataFrame(all_models_metrics).T
         metrics_df = metrics_df.round(4)
-        st.dataframe(metrics_df, use_container_width=True)
+        
+        # Create HTML table with bold headers and model names
+        html_table = "<table style='width:100%; border-collapse: collapse;'>"
+        html_table += "<tr style='background-color: #f0f0f0;'>"
+        html_table += "<th style='padding: 10px; border: 1px solid #ddd; text-align: left;'><b>Model Name</b></th>"
+        for col in metrics_df.columns:
+            html_table += f"<th style='padding: 10px; border: 1px solid #ddd; text-align: center;'><b>{col}</b></th>"
+        html_table += "</tr>"
+        
+        for idx, row in metrics_df.iterrows():
+            html_table += "<tr>"
+            html_table += f"<td style='padding: 10px; border: 1px solid #ddd;'><b>{idx}</b></td>"
+            for val in row:
+                html_table += f"<td style='padding: 10px; border: 1px solid #ddd; text-align: center;'>{val:.4f}</td>"
+            html_table += "</tr>"
+        
+        html_table += "</table>"
+        st.markdown(html_table, unsafe_allow_html=True)
         
         # Calculate ensemble predictions (majority voting)
         ensemble_predictions_array = np.array([all_models_predictions[key] for key in all_models_predictions.keys()])
